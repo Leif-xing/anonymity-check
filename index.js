@@ -17,36 +17,52 @@ const getClientIp = (req) => {
     return req.socket ? req.socket.remoteAddress : '';
 };
 
-// 通用头过滤函数：过滤云平台/CDN注入的内部头
+// 头过滤函数：精确控制请求头输出
 const filterHeaders = (headers) => {
-    const responseHeaders = { ...headers };
-    const ignoreHeaders = [
-        'x-request-id', 
-        'x-railway-routing', 
-        'cdn-loop', 
-        'cf-ray', 
-        'cf-connecting-ip',
+    const responseHeaders = {};
+    
+    // 1. 明确保留的边缘节点/地理位置与时区检测头
+    const keepExact = new Set([
+        'x-vercel-ip-timezone',
+        'cf-ipcountry'
+    ]);
+
+    // 2. 明确移除的冗余/代理/平台内部注入头
+    const ignoreExact = new Set([
+        'forwarded',
+        'x-invocation-id',
+        'x-request-id',
+        'x-railway-routing',
+        'cdn-loop',
+        'x-matched-path',
         'x-forwarded-proto',
         'x-forwarded-port',
         'x-forwarded-host',
-        // Vercel 平台特定注入头
-        'x-vercel-id',
-        'x-vercel-deployment-url',
-        'x-vercel-forwarded-for',
-        'x-vercel-ip-continent',
-        'x-vercel-ip-country',
-        'x-vercel-ip-country-region',
-        'x-vercel-ip-city',
-        'x-vercel-ip-latitude',
-        'x-vercel-ip-longitude',
-        'x-vercel-proxied-for',
-        'x-vercel-proxy-signature',
-        'x-vercel-proxy-signature-options',
-        'x-vercel-sc-host',
-        'x-vercel-ja3-digest',
-        'x-matched-path'
-    ];
-    ignoreHeaders.forEach(h => delete responseHeaders[h.toLowerCase()]);
+        'connection'
+    ]);
+
+    for (const [key, value] of Object.entries(headers)) {
+        const lowerKey = key.toLowerCase();
+        
+        // 优先检查显式保留清单
+        if (keepExact.has(lowerKey)) {
+            responseHeaders[key] = value;
+            continue;
+        }
+
+        // 显式忽略清单
+        if (ignoreExact.has(lowerKey)) {
+            continue;
+        }
+
+        // 过滤其余 x-vercel-* 与 cf-* 底层内部标头
+        if (lowerKey.startsWith('x-vercel-') || lowerKey.startsWith('cf-')) {
+            continue;
+        }
+
+        responseHeaders[key] = value;
+    }
+
     return responseHeaders;
 };
 
